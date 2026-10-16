@@ -1,3 +1,5 @@
+import re
+
 from flask import Blueprint, abort, flash, redirect, render_template, request, url_for
 
 from app import db, doctor_colors
@@ -6,12 +8,26 @@ from app.csrf import validate_csrf
 
 bp = Blueprint("doctors", __name__, url_prefix="/doctors")
 
+# The colour is written into a style="background: ..." attribute on the calendar and the
+# Doctors list, so only a plain #rrggbb value (what <input type="color"> sends) is accepted —
+# anything else could carry extra CSS (url(...) and the like) into every page that shows it.
+_COLOR_RE = re.compile(r"#[0-9a-fA-F]{6}")
+
 
 def _collect_doctor_form(form):
     return {
         field: form.get(field, "").strip()
         for field in ("name", "color", "qualifications", "registration_number", "registration_council")
     }
+
+
+
+def _doctor_form_error(data):
+    if not data["name"]:
+        return "Doctor name is required."
+    if data["color"] and not _COLOR_RE.fullmatch(data["color"]):
+        return "Calendar colour must be a colour code like #2b6cb0."
+    return None
 
 
 @bp.route("/")
@@ -36,8 +52,9 @@ def _warn_if_color_clashes(name, color, doctor_id=None):
 def new():
     validate_csrf(request.form.get("csrf_token"))
     data = _collect_doctor_form(request.form)
-    if not data["name"]:
-        flash("Doctor name is required.", "warning")
+    error = _doctor_form_error(data)
+    if error:
+        flash(error, "warning")
         return redirect(url_for("doctors.list_view"))
     doctor_id = db.add_doctor(
         data["name"], data["color"], actor=current_actor(),
@@ -59,12 +76,13 @@ def edit(doctor_id):
     if request.method == "POST":
         validate_csrf(request.form.get("csrf_token"))
         data = _collect_doctor_form(request.form)
-        if data["name"]:
+        error = _doctor_form_error(data)
+        if not error:
             db.update_doctor(doctor_id, data, actor=current_actor())
             flash(f"Doctor '{data['name']}' updated.", "success")
             _warn_if_color_clashes(data["name"], data["color"], doctor_id)
             return redirect(url_for("doctors.list_view"))
-        flash("Doctor name is required.", "warning")
+        flash(error, "warning")
         doctor = {**doctor, **data}
     return render_template("doctor_form.html", doctor=doctor)
 

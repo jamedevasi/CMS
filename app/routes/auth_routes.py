@@ -18,6 +18,7 @@ from app.auth import (
     note_failed_sign_in,
     note_unknown_sign_in,
     password_errors,
+    safe_next_url,
     verify_totp_code,
 )
 
@@ -128,7 +129,7 @@ def login():
                 errors.append(_ACCOUNT_LOCKED)
             elif user and check_password(user["password_hash"], password):
                 db.clear_failed_logins(ip)
-                next_url = request.args.get("next") or url_for("dashboard.index")
+                next_url = safe_next_url(request.args.get("next"))
                 if user["totp_enabled"]:
                     session.clear()
                     session["totp_pending_user_id"] = user["id"]
@@ -188,7 +189,7 @@ def login_totp():
 
             if verified:
                 db.clear_failed_logins(ip)
-                next_url = session.get("totp_pending_next") or url_for("dashboard.index")
+                next_url = safe_next_url(session.get("totp_pending_next"))
                 complete_login(user, "password + two-step code")
                 return redirect(next_url)
             db.record_failed_login(ip)
@@ -319,7 +320,7 @@ def reauth():
             else:
                 db.clear_failed_logins(ip)
                 mark_reauthenticated()
-                next_url = session.pop("reauth_next", None) or url_for("dashboard.index")
+                next_url = safe_next_url(session.pop("reauth_next", None))
                 return redirect(next_url)
 
     return render_template("reauth.html", errors=errors, totp_enabled=bool(user["totp_enabled"]))

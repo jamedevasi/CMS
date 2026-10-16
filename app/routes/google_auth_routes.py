@@ -15,7 +15,7 @@ from flask import Blueprint, abort, flash, redirect, request, session, url_for
 
 from app import config as app_config
 from app import db
-from app.auth import current_actor, login_required, start_session
+from app.auth import current_actor, login_required, safe_next_url, start_session
 from app.google_oauth import oauth
 
 bp = Blueprint("google_auth", __name__)
@@ -97,7 +97,7 @@ def _finish_signin(sub, email):
         )
         return redirect(url_for("auth.login"))
 
-    next_url = session.pop("google_signin_next", None) or url_for("dashboard.index")
+    next_url = safe_next_url(session.pop("google_signin_next", None))
     start_session(user)
     db.write_audit_now(
         current_actor(), "google_sign_in", "user", user["id"], after_summary=f"google_email={email}",

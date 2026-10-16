@@ -2,6 +2,7 @@ import functools
 import re
 import secrets
 from datetime import datetime, timedelta, timezone
+from urllib.parse import urlsplit
 
 import pyotp
 from flask import abort, flash, redirect, request, session, url_for
@@ -330,6 +331,22 @@ def is_reauthenticated():
     if ts is None:
         return False
     return _utcnow() - ts <= timedelta(minutes=REAUTH_WINDOW_MINUTES)
+
+
+def safe_next_url(url):
+    """`url` if it points inside Feast9, else the dashboard — every redirect to a `next`
+    address (login, two-step, Google sign-in, step-up) goes through this, so a crafted
+    link like /login?next=https://evil.example can't send someone off-site after they
+    sign in (an open redirect). A same-host absolute URL (the Referer) is cut down to its
+    path; anything with a backslash or control character is refused, since browsers read
+    a backslash as a slash ('/' + backslash + 'evil.example' becomes '//evil.example')."""
+    if url and "\\" not in url and not any(ord(ch) < 32 for ch in url):
+        parts = urlsplit(url)
+        local = not parts.scheme and not parts.netloc
+        same_host = parts.scheme in ("http", "https") and parts.netloc == request.host
+        if (local or same_host) and parts.path.startswith("/") and not parts.path.startswith("//"):
+            return parts.path + (f"?{parts.query}" if parts.query else "")
+    return url_for("dashboard.index")
 
 
 def reauth_required(view):
